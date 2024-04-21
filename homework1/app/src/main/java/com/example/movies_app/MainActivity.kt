@@ -33,7 +33,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             Movies_appTheme {
-                // A surface container using the 'background' color from the theme
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -50,8 +49,9 @@ fun WellnessScreen(
     modifier: Modifier = Modifier,
     wellnessViewModel: WellnessViewModel = viewModel()
 ) {
+    var checkedItems by rememberSaveable { mutableStateOf(wellnessViewModel.getCheckedItems()) }
+
     var newItemTitle by rememberSaveable { mutableStateOf("") }
-    var newItemDescription by rememberSaveable { mutableStateOf("") }
     val dialogVisibleState = rememberSaveable { mutableStateOf(false) }
 
     Column(modifier = modifier) {
@@ -63,9 +63,14 @@ fun WellnessScreen(
             Text("Add Watch List Item")
         }
 
-        WatchList(wellnessViewModel.watchList) { item ->
-            wellnessViewModel.toggleWatched(item)
-        }
+        WatchList(
+            watchList = wellnessViewModel.watchList,
+            checkedItems = checkedItems,
+            onWatchedToggle = { index, isChecked ->
+                checkedItems = checkedItems.toMutableList().also { it[index] = isChecked }
+                wellnessViewModel.toggleWatched(index)
+            }
+        )
 
         if (dialogVisibleState.value) {
             AddWatchListItemDialog(
@@ -73,39 +78,72 @@ fun WellnessScreen(
                     wellnessViewModel.addWatchListItem(
                         WatchListItem(
                             id = wellnessViewModel.watchList.size,
-                            title = newItemTitle,
-                            description = newItemDescription
+                            title = newItemTitle
                         )
                     )
+                    checkedItems = checkedItems.toMutableList().apply { add(false) } // Add a new unchecked item
                     dialogVisibleState.value = false
-                    // Clear fields after adding
                     newItemTitle = ""
-                    newItemDescription = ""
                 },
                 onDismiss = { dialogVisibleState.value = false },
                 title = newItemTitle,
-                description = newItemDescription,
-                onTitleChange = { newItemTitle = it },
-                onDescriptionChange = { newItemDescription = it }
+                onTitleChange = { newItemTitle = it }
             )
         }
     }
 }
 
+class WellnessViewModel : ViewModel() {
+    private val _watchList = mutableListOf<WatchListItem>()
+    private val _checkedItems = mutableListOf<Boolean>()
+
+    val watchList: List<WatchListItem>
+        get() = _watchList
+
+    init {
+        repeat(5) { index ->
+            _watchList.add(
+                WatchListItem(
+                    id = index,
+                    title = "Movie/series ${index + 1}"
+                )
+            )
+            _checkedItems.add(false)
+        }
+    }
+
+    fun addWatchListItem(item: WatchListItem) {
+        _watchList.add(item)
+        _checkedItems.add(false)
+    }
+
+    fun toggleWatched(index: Int) {
+        _watchList[index].watched = !_watchList[index].watched
+    }
+
+    fun getCheckedItems(): List<Boolean> {
+        return _checkedItems
+    }
+}
 
 @Composable
 fun WatchList(
     watchList: List<WatchListItem>,
-    onWatchedToggle: (WatchListItem) -> Unit
+    checkedItems: List<Boolean>,
+    onWatchedToggle: (Int, Boolean) -> Unit
 ) {
     LazyColumn {
         items(
             items = watchList,
             key = { item -> item.id }
         ) { item ->
+            val index = watchList.indexOf(item)
             WatchListItem(
                 item = item,
-                onWatchedToggle = onWatchedToggle
+                isChecked = checkedItems[index],
+                onWatchedToggle = { isChecked ->
+                    onWatchedToggle(index, isChecked)
+                }
             )
         }
     }
@@ -114,15 +152,16 @@ fun WatchList(
 @Composable
 fun WatchListItem(
     item: WatchListItem,
-    onWatchedToggle: (WatchListItem) -> Unit
+    isChecked: Boolean,
+    onWatchedToggle: (Boolean) -> Unit
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.padding(16.dp)
     ) {
         Checkbox(
-            checked = item.watched,
-            onCheckedChange = { onWatchedToggle(item) }
+            checked = isChecked,
+            onCheckedChange = { onWatchedToggle(it) }
         )
         Text(
             text = item.title,
@@ -131,45 +170,12 @@ fun WatchListItem(
     }
 }
 
-class WellnessViewModel : ViewModel() {
-    private val _watchList = mutableListOf<WatchListItem>()
-    val watchList: List<WatchListItem>
-        get() = _watchList
-
-    init {
-        // Pre-fill with some sample entries
-        repeat(5) { index ->
-            _watchList.add(
-                WatchListItem(
-                    id = index,
-                    title = "Movie/series ${index + 1}",
-                    description = "Description for movie/series ${index + 1}"
-                )
-            )
-        }
-    }
-
-    fun addWatchListItem(item: WatchListItem) {
-        _watchList.add(item)
-    }
-
-    fun removeWatchListItem(item: WatchListItem) {
-        _watchList.remove(item)
-    }
-
-    fun toggleWatched(item: WatchListItem) {
-        item.watched = !item.watched
-    }
-}
-
 @Composable
 fun AddWatchListItemDialog(
     onAddItem: () -> Unit,
     onDismiss: () -> Unit,
     title: String,
-    description: String,
     onTitleChange: (String) -> Unit,
-    onDescriptionChange: (String) -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -192,21 +198,13 @@ fun AddWatchListItemDialog(
                     label = { Text("Title") },
                     modifier = Modifier.padding(8.dp)
                 )
-                TextField(
-                    value = description,
-                    onValueChange = onDescriptionChange,
-                    label = { Text("Description") },
-                    modifier = Modifier.padding(8.dp)
-                )
             }
         }
     )
 }
 
-
 data class WatchListItem(
     val id: Int,
     val title: String,
-    val description: String,
     var watched: Boolean = false
 )
